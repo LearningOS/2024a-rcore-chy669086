@@ -18,6 +18,7 @@ use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use crate::syscall::TaskInfo;
+use crate::timer::get_time_ms;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -38,10 +39,6 @@ pub struct TaskManager {
     num_app: usize,
     /// use inner value to get mutable access
     inner: UPSafeCell<TaskManagerInner>,
-    /// task info
-    task_info: [UPSafeCell<TaskInfo>; MAX_APP_NUM],
-    /// task start time
-    start_time: [UPSafeCell<Option<usize>>; MAX_APP_NUM],
 }
 
 /// Inner of Task Manager
@@ -50,6 +47,10 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    /// task info
+    pub task_info: [UPSafeCell<TaskInfo>; MAX_APP_NUM],
+    /// task start time
+    pub start_time: [usize; MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -70,14 +71,12 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+            task_info: core::array::from_fn(|_|  
+                UPSafeCell::new(TaskInfo::new())
+            ),
+            start_time: [0; MAX_APP_NUM],
                 })
             },
-            task_info: core::array::from_fn(|_| unsafe {
-                UPSafeCell::new(TaskInfo::new())
-            }),
-            start_time: core::array::from_fn(|_| unsafe {
-                UPSafeCell::new(None)
-            }),
         }
     };
 }
@@ -88,19 +87,17 @@ impl TaskManager {
     /// Generally, the first task in task list is an idle task (we call it zero process later).
     /// But in ch3, we load apps statically, so the first task is a real app.
     fn run_first_task(&self) -> ! {
-        let mut task0_start_time = self.start_time[0].exclusive_access();
-        *task0_start_time = Some(crate::timer::get_time_ms());
-        drop(task0_start_time);
-
-        // 设置第一个任务的状态为 `Running`
-        let mut task0_info = self.task_info[0].exclusive_access();
-        task0_info.status = TaskStatus::Running;
-        drop(task0_info);
-
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
+
+        let mut task_info = inner.task_info[0].exclusive_access();
+        task_info.status = TaskStatus::Running;
+        drop(task_info);
+
+        inner.start_time[0] = get_time_ms();
+
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -116,7 +113,7 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].task_status = TaskStatus::Ready;
 
-        let mut task_info = self.task_info[current].exclusive_access();
+        let mut task_info = inner.task_info[current].exclusive_access();
         task_info.status = TaskStatus::Ready;
     }
 
@@ -126,7 +123,7 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].task_status = TaskStatus::Exited;
 
-        let mut task_info = self.task_info[current].exclusive_access();
+        let mut task_info = inner.task_info[current].exclusive_access();
         task_info.status = TaskStatus::Exited;
     }
 
@@ -151,16 +148,16 @@ impl TaskManager {
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
-            drop(inner);
-
-            let mut task_info = self.task_info[next].exclusive_access();
+            
+            let mut task_info = inner.task_info[next].exclusive_access();
             task_info.status = TaskStatus::Running;
             drop(task_info);
 
-            if self.start_time[next].exclusive_access().is_none() {
-                let mut task_start_time = self.start_time[next].exclusive_access();
-                *task_start_time = Some(crate::timer::get_time_ms());
+            if inner.start_time[next] == 0 {
+                inner.start_time[next] = get_time_ms();
             }
+
+            drop(inner);
 
             // before this, we should drop local variables that must be dropped manually
             unsafe {
@@ -213,10 +210,15 @@ pub fn get_running_taskid() -> usize {
 
 /// Get the task info of the current 'Running' task.
 pub fn get_running_task_info() -> &'static UPSafeCell<TaskInfo> {
-    &TASK_MANAGER.task_info[get_running_taskid()]
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let task_info = &inner.task_info[inner.current_task];
+    unsafe {
+        core::mem::transmute::<&UPSafeCell<TaskInfo>, &UPSafeCell<TaskInfo>>(task_info)
+    }
 }
 
 /// Get the start time of the current 'Running' task.
-pub fn get_running_task_start_time() -> &'static UPSafeCell<Option<usize>> {
-    &TASK_MANAGER.start_time[get_running_taskid()]
+pub fn get_running_task_start_time() -> usize {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    inner.start_time[inner.current_task]
 }

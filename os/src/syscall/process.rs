@@ -75,9 +75,6 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info");
     // 取得当前任务的开始时间
     let start_time = get_running_task_start_time();
-    let Some(&mut start_time) = start_time.exclusive_access().as_mut() else {
-        return -1;
-    };
 
     add_syscall_time(SYSCALL_TASK_INFO);
 
