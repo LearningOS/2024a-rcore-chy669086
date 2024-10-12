@@ -48,9 +48,9 @@ pub struct TaskManagerInner {
     /// id of current `Running` task
     current_task: usize,
     /// task info
-    pub task_info: [UPSafeCell<TaskInfo>; MAX_APP_NUM],
+    task_info: [UPSafeCell<TaskInfo>; MAX_APP_NUM],
     /// task start time
-    pub start_time: [usize; MAX_APP_NUM],
+    start_time: [usize; MAX_APP_NUM],
 }
 
 lazy_static! {
