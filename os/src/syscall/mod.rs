@@ -28,6 +28,8 @@ pub use process::TaskInfo;
 
 use fs::*;
 use process::*;
+
+use crate::task::TaskStatus;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
     match syscall_id {
@@ -38,4 +40,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_TASK_INFO => sys_task_info(args[0] as *mut TaskInfo),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
+}
+
+// 辅助函数，增加计数
+fn add_syscall_time(syscall_id: usize) -> isize {
+    let task_info = crate::task::get_running_task_info();
+    let mut task_info = task_info.exclusive_access();
+    assert!(task_info.status == TaskStatus::Running);
+    task_info.syscall_times[syscall_id] += 1;
+    0
 }
