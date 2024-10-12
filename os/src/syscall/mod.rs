@@ -24,6 +24,8 @@ const SYSCALL_TASK_INFO: usize = 410;
 mod fs;
 mod process;
 
+pub use process::TaskInfo;
+
 use fs::*;
 use process::*;
 /// handle syscall exception with `syscall_id` and other arguments
