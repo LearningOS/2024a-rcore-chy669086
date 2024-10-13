@@ -16,6 +16,7 @@ mod task;
 
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -46,6 +47,10 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    /// start time
+    start_time: Vec<Option<usize>>,
+    /// task info
+    task_info: Vec<UPSafeCell<TaskInfo>>,
 }
 
 lazy_static! {
@@ -58,12 +63,25 @@ lazy_static! {
         for i in 0..num_app {
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
         }
+
+        let mut start_time: Vec<Option<usize>> = Vec::new();
+        for _ in 0..num_app {
+            start_time.push(None);
+        }
+
+        let mut task_info = Vec::new();
+        for _ in 0..num_app {
+            task_info.push(unsafe{UPSafeCell::new(TaskInfo::new())});
+        }
+
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    start_time,
+                    task_info,
                 })
             },
         }
@@ -77,6 +95,15 @@ impl TaskManager {
     /// But in ch4, we load apps statically, so the first task is a real app.
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
+
+        let current = inner.current_task;
+        inner.start_time[current] = Some(crate::timer::get_time_ms());
+
+        let mut task_info = inner.task_info[current].exclusive_access();
+        task_info.status = TaskStatus::Running;
+        drop(task_info);
+
+
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
@@ -94,6 +121,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         inner.tasks[cur].task_status = TaskStatus::Ready;
+        let mut task_info = inner.task_info[cur].exclusive_access();
+        task_info.status = TaskStatus::Ready;
     }
 
     /// Change the status of current `Running` task into `Exited`.
@@ -101,6 +130,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         inner.tasks[cur].task_status = TaskStatus::Exited;
+        let mut task_info = inner.task_info[cur].exclusive_access();
+        task_info.status = TaskStatus::Exited;
     }
 
     /// Find next task to run and return task id.
@@ -138,7 +169,16 @@ impl TaskManager {
     fn run_next_task(&self) {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
+            if inner.start_time[next].is_none() {
+                inner.start_time[next] = Some(crate::timer::get_time_ms());
+            }
+
             let current = inner.current_task;
+
+            let mut task_info = inner.task_info[next].exclusive_access();
+            task_info.status = TaskStatus::Running;
+            drop(task_info);
+
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
@@ -201,4 +241,32 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// 取得当前任务的 MemorySet
+pub fn current_task_memory_set() -> &'static mut crate::mm::MemorySet {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current_task = inner.current_task;
+    unsafe {
+        core::mem::transmute::<&mut crate::mm::MemorySet, &'static mut crate::mm::MemorySet>(
+            &mut inner.tasks[current_task].memory_set,
+        )
+    }
+}
+
+/// Get the start time of current task
+pub fn get_current_task_start_time() -> Option<usize> {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let task_id = inner.current_task;
+    inner.start_time[task_id]
+}
+
+/// Get the task info of current task
+pub fn get_current_task_info() -> &'static UPSafeCell<TaskInfo> {
+    let task_id = TASK_MANAGER.inner.exclusive_access().current_task;
+    unsafe {
+        core::mem::transmute::<&UPSafeCell<TaskInfo>, &'static UPSafeCell<TaskInfo>>(
+            &TASK_MANAGER.inner.exclusive_access().task_info[task_id],
+        )
+    }
 }
