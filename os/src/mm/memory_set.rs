@@ -77,7 +77,9 @@ impl MemorySet {
     pub fn try_remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
         let mut index = None;
         for (i, area) in self.areas.iter().enumerate() {
-            if area.vpn_range.get_start() == start_va.floor() && area.vpn_range.get_end() >= end_va.ceil() {
+            if area.vpn_range.get_start() == start_va.floor()
+                && area.vpn_range.get_end() >= end_va.ceil()
+            {
                 index = Some(i);
                 break;
             }
@@ -91,7 +93,6 @@ impl MemorySet {
             None => -1,
         }
     }
-
 
     /// Assume that no conflicts.
     pub fn insert_framed_area(
