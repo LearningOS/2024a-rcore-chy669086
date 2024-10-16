@@ -44,9 +44,17 @@ mod fs;
 mod process;
 
 use fs::*;
+pub use process::TaskInfo;
 use process::*;
+
+use crate::task::current_task;
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    assert!(syscall_id < 500, "unsupported syscall_id: {}", syscall_id);
+
+    add_sys_call_times(syscall_id);
+
     match syscall_id {
         SYSCALL_READ => sys_read(args[0], args[1] as *const u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
@@ -65,4 +73,15 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_SET_PRIORITY => sys_set_priority(args[0] as isize),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
+}
+
+fn add_sys_call_times(syscall_id: usize) {
+    let task_info = get_current_task_info();
+    task_info.syscall_times[syscall_id] += 1;
+}
+
+fn get_current_task_info() -> &'static mut TaskInfo {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    unsafe { core::mem::transmute::<&mut TaskInfo, &'static mut TaskInfo>(&mut inner.task_info) }
 }

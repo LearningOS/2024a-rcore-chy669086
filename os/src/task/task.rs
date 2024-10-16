@@ -4,6 +4,7 @@ use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
@@ -68,6 +69,18 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Task Info
+    pub task_info: TaskInfo,
+
+    /// Task start time
+    pub start_time: usize,
+
+    /// Task priority
+    pub priority: isize,
+
+    /// Task pass
+    pub stride: usize,
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +131,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    task_info: TaskInfo::new(),
+                    start_time: 0,
+                    priority: 16,
+                    stride: 0,
                 })
             },
         };
@@ -191,6 +208,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    task_info: TaskInfo::new(),
+                    start_time: 0,
+                    priority: 16,
+                    stride: 0,
                 })
             },
         });

@@ -60,6 +60,27 @@ impl MemorySet {
             None,
         );
     }
+    /// 插入一个映射区间，返回是否成功 0:成功 -1:冲突
+    pub fn try_insert_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> isize {
+        fn overlap_with(a: &VPNRange, b: &VPNRange) -> bool {
+            a.get_start() < b.get_end() && a.get_end() > b.get_start()
+        }
+
+        let mut new_area = MapArea::new(start_va, end_va, MapType::Framed, permission);
+        for area in self.areas.iter() {
+            if overlap_with(&area.vpn_range, &new_area.vpn_range) {
+                return -1;
+            }
+        }
+        new_area.map(&mut self.page_table);
+        self.areas.push(new_area);
+        0
+    }
     /// remove a area
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -70,6 +91,26 @@ impl MemorySet {
         {
             area.unmap(&mut self.page_table);
             self.areas.remove(idx);
+        }
+    }
+    /// 删除一个映射区间，返回是否成功 0:成功 -1:未找到
+    pub fn try_remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let mut index = None;
+        for (i, area) in self.areas.iter().enumerate() {
+            if area.vpn_range.get_start() == start_va.floor()
+                && area.vpn_range.get_end() >= end_va.ceil()
+            {
+                index = Some(i);
+                break;
+            }
+        }
+        match index {
+            Some(i) => {
+                let mut area = self.areas.remove(i);
+                area.unmap(&mut self.page_table);
+                0
+            }
+            None => -1,
         }
     }
     /// Add a new MapArea into this MemorySet.
