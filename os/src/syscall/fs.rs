@@ -1,5 +1,5 @@
 //! File and filesystem-related syscalls
-use crate::fs::{open_file, OpenFlags, Stat};
+use crate::fs::{link_count, linkat, open_file, unlinkat, OpenFlags, Stat, StatMode};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
 
@@ -55,6 +55,7 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
         let mut inner = task.inner_exclusive_access();
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
+        inner.fd_name_table.insert(fd, path);
         fd as isize
     } else {
         -1
@@ -71,33 +72,83 @@ pub fn sys_close(fd: usize) -> isize {
     if inner.fd_table[fd].is_none() {
         return -1;
     }
+    inner.fd_name_table.remove(&fd);
     inner.fd_table[fd].take();
     0
 }
 
 /// YOUR JOB: Implement fstat.
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     trace!(
         "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if inner.fd_table[fd].is_none() {
+        return -1;
+    }
+    let Some(name) = inner.fd_name_table.get(&fd) else {
+        return -1;
+    };
+    let link_count = link_count(name);
+    let st_ = Stat {
+        dev: 0,
+        ino: 0,
+        mode: StatMode::FILE,
+        nlink: link_count,
+        pad: [0; 7],
+    };
+    drop(inner);
+    drop(task);
+    let token = current_user_token();
+    let buffers = translated_byte_buffer(token, st as *const u8, core::mem::size_of::<Stat>());
+    let mut p = &st_ as *const Stat as *const u8;
+    for buffer in buffers {
+        for i in 0..buffer.len() {
+            unsafe {
+                buffer[i] = *p;
+                p = p.add(1);
+            }
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Implement linkat.
-pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
+pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_linkat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let old_name = translated_str(token, old_name);
+    let new_name = translated_str(token, new_name);
+
+    if old_name == new_name {
+        return -1;
+    }
+
+    if let Some(inode) = open_file(old_name.as_str(), OpenFlags::RDONLY) {
+        let inner = inode.inner.exclusive_access();
+        linkat(&new_name, inner.inode.clone());
+        0
+    } else {
+        -1
+    }
 }
 
 /// YOUR JOB: Implement unlinkat.
-pub fn sys_unlinkat(_name: *const u8) -> isize {
+pub fn sys_unlinkat(name: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_unlinkat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let name = translated_str(token, name);
+    unlinkat(name.as_str());
+    0
 }

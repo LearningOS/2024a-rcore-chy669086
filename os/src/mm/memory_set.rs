@@ -74,7 +74,8 @@ impl MemorySet {
         permission: MapPermission,
     ) -> isize {
         fn overlap_with(a: &VPNRange, b: &VPNRange) -> bool {
-            a.get_start() < b.get_end() && a.get_end() > b.get_start()
+            (a.get_start() <= b.get_end() && a.get_end() >= b.get_start())
+                || (b.get_start() <= a.get_end() && b.get_end() >= a.get_start())
         }
 
         let mut new_area = MapArea::new(start_va, end_va, MapType::Framed, permission);

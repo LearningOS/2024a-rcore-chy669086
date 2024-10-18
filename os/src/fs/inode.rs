@@ -20,12 +20,13 @@ use lazy_static::*;
 pub struct OSInode {
     readable: bool,
     writable: bool,
-    inner: UPSafeCell<OSInodeInner>,
+    /// The OS inode inner in 'UPSafeCell'
+    pub inner: UPSafeCell<OSInodeInner>,
 }
 /// The OS inode inner in 'UPSafeCell'
 pub struct OSInodeInner {
     offset: usize,
-    inode: Arc<Inode>,
+    pub inode: Arc<Inode>,
 }
 
 impl OSInode {
@@ -98,6 +99,21 @@ impl OpenFlags {
             (true, true)
         }
     }
+}
+
+/// unlinkat
+pub fn unlinkat(name: &str) {
+    ROOT_INODE.unlinkat(name);
+}
+
+/// linkat
+pub fn linkat(name: &str, indoe: Arc<Inode>) {
+    ROOT_INODE.linkat(name, &indoe);
+}
+
+/// link count
+pub fn link_count(name: &str) -> u32 {
+    ROOT_INODE.link_count(name)
 }
 
 /// Open a file

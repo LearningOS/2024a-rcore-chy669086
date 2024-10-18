@@ -12,7 +12,7 @@ use crate::{
     syscall::get_current_task_info,
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskControlBlock, TaskStatus,
+        suspend_current_and_run_next, TaskStatus,
     },
     timer::{get_time_ms, get_time_us},
 };
@@ -262,18 +262,14 @@ pub fn sys_spawn(path: *const u8) -> isize {
 
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         // 创建新的 Task
-        let task = Arc::new(TaskControlBlock::new(data));
-        let current_task = current_task().unwrap();
-        task.inner_exclusive_access().parent = Some(Arc::downgrade(&current_task));
-        current_task
-            .inner_exclusive_access()
-            .children
-            .push(task.clone());
+        let all_data = app_inode.read_all();
 
-        let new_pid = task.pid.0;
-        add_task(task);
+        let task_control_block = current_task().unwrap().spawn(all_data.as_slice());
+
+        let new_pid = task_control_block.pid.0;
+        add_task(task_control_block);
         new_pid as isize
     } else {
         -1
@@ -300,5 +296,5 @@ pub fn sys_set_priority(prio: isize) -> isize {
 fn get_current_memory_set() -> &'static mut MemorySet {
     let current_task = current_task().unwrap();
     let memory_set = &mut current_task.inner_exclusive_access().memory_set;
-    unsafe { core::mem::transmute::<&mut MemorySet, &'static mut MemorySet>(memory_set) }
+    unsafe { &mut *(memory_set as *mut MemorySet) }
 }
