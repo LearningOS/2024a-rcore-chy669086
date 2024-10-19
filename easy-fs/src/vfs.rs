@@ -132,6 +132,8 @@ impl Inode {
                     new_data.extend_from_slice(dirent.as_bytes());
                 }
             }
+            // decrease size
+            self.increase_size(new_size as u32, disk_inode, &mut fs);
             disk_inode.size = new_size as u32;
             // write new data
             disk_inode.write_at(0, &new_data, &self.block_device);
@@ -140,8 +142,8 @@ impl Inode {
     }
     /// 硬链接
     pub fn linkat(&self, name: &str, new_inode: &Inode) {
-        let new_inode_id = new_inode.inode_id();
         let mut fs = self.fs.lock();
+        let new_inode_id = fs.get_indoe_id(new_inode.block_id as u32, new_inode.block_offset);
         self.modify_disk_inode(|disk_inode| {
             // assert it is a directory
             assert!(disk_inode.is_dir());
@@ -212,11 +214,8 @@ impl Inode {
         // release efs lock automatically by compiler
     }
     /// 得到某个文件的链接数
-    pub fn link_count(&self, name: &str) -> u32 {
+    pub fn link_count(&self, inode_id: u32) -> u32 {
         let _fs = self.fs.lock();
-        let inode_id = self
-            .read_disk_inode(|disk_inode| self.find_inode_id(name, disk_inode))
-            .unwrap();
         let mut link_count: u32 = 0;
         self.read_disk_inode(|disk_inode| -> u32 {
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;

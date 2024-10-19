@@ -94,28 +94,29 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     let Some(name) = inner.fd_name_table.get(&fd) else {
         return -1;
     };
-    let link_count = link_count(name);
-    let st_ = Stat {
-        dev: 0,
-        ino: 0,
-        mode: StatMode::FILE,
-        nlink: link_count,
-        pad: [0; 7],
-    };
-    drop(inner);
-    drop(task);
-    let token = current_user_token();
-    let buffers = translated_byte_buffer(token, st as *const u8, core::mem::size_of::<Stat>());
-    let mut p = &st_ as *const Stat as *const u8;
-    for buffer in buffers {
-        for i in 0..buffer.len() {
-            unsafe {
-                buffer[i] = *p;
-                p = p.add(1);
-            }
+    if let Some(inode) = open_file(&name, OpenFlags::RDONLY) {
+        let ino = inode.inner.exclusive_access().inode.inode_id() as u64;
+        let link_count = link_count(ino as u32);
+        let st_ = Stat {
+            dev: 0,
+            ino,
+            mode: StatMode::FILE,
+            nlink: link_count,
+            pad: [0; 7],
+        };
+        drop(inner);
+        drop(task);
+        let token = current_user_token();
+        let buffers = translated_byte_buffer(token, st as *const u8, core::mem::size_of::<Stat>());
+        let mut p = &st_ as *const Stat as *const u8;
+        for buffer in buffers {
+            buffer.copy_from_slice(unsafe { core::slice::from_raw_parts(p, buffer.len()) });
+            p = unsafe { p.add(buffer.len()) };
         }
+        0
+    } else {
+        -1
     }
-    0
 }
 
 /// YOUR JOB: Implement linkat.

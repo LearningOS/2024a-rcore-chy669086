@@ -112,8 +112,8 @@ pub fn linkat(name: &str, indoe: Arc<Inode>) {
 }
 
 /// link count
-pub fn link_count(name: &str) -> u32 {
-    ROOT_INODE.link_count(name)
+pub fn link_count(inode_id: u32) -> u32 {
+    ROOT_INODE.link_count(inode_id)
 }
 
 /// Open a file

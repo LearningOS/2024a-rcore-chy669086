@@ -155,10 +155,8 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     );
 
     for buffer in buffers {
-        for i in 0..buffer.len() {
-            buffer[i] = unsafe { *time };
-            time = unsafe { time.add(1) };
-        }
+        buffer.copy_from_slice(unsafe { core::slice::from_raw_parts(time, buffer.len()) });
+        time = unsafe { time.add(buffer.len()) };
     }
 
     0
@@ -196,10 +194,8 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     );
 
     for buffer in buffers {
-        for i in 0..buffer.len() {
-            buffer[i] = unsafe { *task_info };
-            task_info = unsafe { task_info.add(1) };
-        }
+        buffer.copy_from_slice(unsafe { core::slice::from_raw_parts(task_info, buffer.len()) });
+        task_info = unsafe { task_info.add(buffer.len()) };
     }
 
     0
