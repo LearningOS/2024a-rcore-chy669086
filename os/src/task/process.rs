@@ -23,6 +23,44 @@ pub struct ProcessControlBlock {
     inner: UPSafeCell<ProcessControlBlockInner>,
 }
 
+/// 死锁检测
+pub struct DeadlockDetect {
+    /// 可利用资源向量
+    pub available: Vec<usize>,
+    /// 分配矩阵
+    pub allocation: Vec<Vec<usize>>,
+    /// 需求矩阵
+    pub need: Vec<Vec<usize>>,
+}
+
+impl DeadlockDetect {
+    pub fn new() -> Self {
+        Self {
+            available: Vec::new(),
+            allocation: vec![vec![]],
+            need: vec![vec![]],
+        }
+    }
+    pub fn is_deadlock(&self) -> bool {
+        let mut work = self.available.clone();
+        let mut finish = vec![false; self.allocation.len()];
+        let mut flag = true;
+        while flag {
+            flag = false;
+            for i in 0..self.allocation.len() {
+                if !finish[i] && self.need[i].iter().zip(work.iter()).all(|(n, w)| n <= w) {
+                    finish[i] = true;
+                    flag = true;
+                    for j in 0..self.allocation[i].len() {
+                        work[j] += self.allocation[i][j];
+                    }
+                }
+            }
+        }
+        !finish.iter().all(|&f| f)
+    }
+}
+
 /// Inner of Process Control Block
 pub struct ProcessControlBlockInner {
     /// is zombie?
@@ -49,6 +87,12 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// deadlock_detect
+    pub deadlock_detect: bool,
+    /// deadlock_detect for mutex
+    pub deadlock_detect_mutex: DeadlockDetect,
+    /// deadlock_detect for semaphore
+    pub deadlock_detect_semaphore: DeadlockDetect,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +163,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    deadlock_detect_mutex: DeadlockDetect::new(),
+                    deadlock_detect_semaphore: DeadlockDetect::new(),
                 })
             },
         });
@@ -245,6 +292,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    deadlock_detect_mutex: DeadlockDetect::new(),
+                    deadlock_detect_semaphore: DeadlockDetect::new(),
                 })
             },
         });
