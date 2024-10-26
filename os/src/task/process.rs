@@ -26,11 +26,11 @@ pub struct ProcessControlBlock {
 /// 死锁检测
 pub struct DeadlockDetect {
     /// 可利用资源向量
-    pub available: Vec<usize>,
+    available: Vec<usize>,
     /// 分配矩阵
-    pub allocation: Vec<Vec<usize>>,
+    allocation: Vec<Vec<usize>>,
     /// 需求矩阵
-    pub need: Vec<Vec<usize>>,
+    need: Vec<Vec<usize>>,
 }
 
 impl DeadlockDetect {
@@ -41,6 +41,38 @@ impl DeadlockDetect {
             need: vec![vec![]],
         }
     }
+    pub fn new_prossess(&mut self) {
+        self.allocation.push(vec![0; self.available.len()]);
+        self.need.push(vec![0; self.available.len()]);
+    }
+
+    pub fn reset_available(&mut self, id: usize, size: usize) {
+        self.available[id] = size;
+    }
+
+    pub fn new_available(&mut self, size: usize) {
+        self.available.push(size);
+        for i in 0..self.allocation.len() {
+            self.allocation[i].push(0);
+            self.need[i].push(0);
+        }
+    }
+
+    pub fn add_needed(&mut self, tid: usize, id: usize, need: usize) {
+        self.need[tid][id] += need;
+    }
+
+    pub fn add_allocated(&mut self, tid: usize, id: usize, allocated: usize) {
+        self.allocation[tid][id] += allocated;
+        self.need[tid][id] -= allocated;
+        self.available[id] -= allocated;
+    }
+
+    pub fn relax(&mut self, tid: usize, id: usize, allocated: usize) {
+        self.allocation[tid][id] -= allocated;
+        self.available[id] += allocated;
+    }
+
     pub fn is_deadlock(&self) -> bool {
         let mut work = self.available.clone();
         let mut finish = vec![false; self.allocation.len()];
