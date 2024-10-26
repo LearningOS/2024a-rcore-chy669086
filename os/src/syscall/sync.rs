@@ -49,12 +49,13 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.mutex_list[id] = mutex;
+        process_inner.deadlock_detect_mutex.new_available(id, 1);
         id as isize
     } else {
-        process_inner.deadlock_detect_mutex.new_available(1);
-
         process_inner.mutex_list.push(mutex);
-        process_inner.mutex_list.len() as isize - 1
+        let id = process_inner.mutex_list.len() - 1;
+        process_inner.deadlock_detect_mutex.new_available(id, 1);
+        id as isize
     }
 }
 /// mutex lock syscall
@@ -85,8 +86,7 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let deadlock_detect_mutex = &mut process_inner.deadlock_detect_mutex;
     deadlock_detect_mutex.add_needed(tid, mutex_id, 1);
     if deadlock_detect && deadlock_detect_mutex.is_deadlock() {
-        drop(process_inner);
-        drop(process);
+        deadlock_detect_mutex.sub_needed(tid, mutex_id, 1);
         return -0xdead;
     }
 
@@ -123,7 +123,7 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
         .unwrap()
         .tid;
     let deadlock_detect_mutex = &mut process_inner.deadlock_detect_mutex;
-    deadlock_detect_mutex.relax(tid, mutex_id, 1);
+    deadlock_detect_mutex.release(tid, mutex_id, 1);
 
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
@@ -153,19 +153,18 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.semaphore_list[id] = Some(Arc::new(Semaphore::new(res_count)));
-        let deadlock_detect_semaphore = &mut process_inner.deadlock_detect_semaphore;
-        deadlock_detect_semaphore.reset_available(id, res_count);
         id
     } else {
         process_inner
-            .deadlock_detect_semaphore
-            .new_available(res_count);
-
-        process_inner
             .semaphore_list
             .push(Some(Arc::new(Semaphore::new(res_count))));
-        process_inner.semaphore_list.len() - 1
+
+        let id = process_inner.semaphore_list.len() - 1;
+        id
     };
+    process_inner
+        .deadlock_detect_semaphore
+        .new_available(id, res_count);
     id as isize
 }
 /// semaphore up syscall
@@ -193,7 +192,7 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
         .unwrap()
         .tid;
     let deadlock_detect_semaphore = &mut process_inner.deadlock_detect_semaphore;
-    deadlock_detect_semaphore.relax(tid, sem_id, 1);
+    deadlock_detect_semaphore.release(tid, sem_id, 1);
 
     drop(process_inner);
     sem.up();
@@ -228,8 +227,7 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let deadlock_detect_semaphore = &mut process_inner.deadlock_detect_semaphore;
     deadlock_detect_semaphore.add_needed(tid, sem_id, 1);
     if deadlock_detect && deadlock_detect_semaphore.is_deadlock() {
-        drop(process_inner);
-        drop(process);
+        deadlock_detect_semaphore.sub_needed(tid, sem_id, 1);
         return -0xdead;
     }
 

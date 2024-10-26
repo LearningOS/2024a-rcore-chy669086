@@ -41,21 +41,34 @@ impl DeadlockDetect {
             need: vec![vec![]],
         }
     }
-    pub fn new_prossess(&mut self) {
-        self.allocation.push(vec![0; self.available.len()]);
-        self.need.push(vec![0; self.available.len()]);
-    }
-
-    pub fn reset_available(&mut self, id: usize, size: usize) {
-        self.available[id] = size;
-    }
-
-    pub fn new_available(&mut self, size: usize) {
-        self.available.push(size);
-        for i in 0..self.allocation.len() {
-            self.allocation[i].push(0);
-            self.need[i].push(0);
+    pub fn new_prossess(&mut self, tid: usize) {
+        if tid < self.allocation.len() {
+            assert!(self.allocation[tid].len() == self.need[tid].len());
+            for i in 0..self.allocation[tid].len() {
+                self.allocation[tid][i] = 0;
+                self.need[tid][i] = 0;
+            }
+        } else {
+            self.allocation.push(vec![0; self.available.len()]);
+            self.need.push(vec![0; self.available.len()]);
         }
+    }
+
+    pub fn new_available(&mut self, id: usize, size: usize) {
+        if id < self.available.len() {
+            self.available[id] = size;
+        } else {
+            assert!(self.allocation.len() == self.need.len());
+            self.available.push(size);
+            for i in 0..self.allocation.len() {
+                self.allocation[i].push(0);
+                self.need[i].push(0);
+            }
+        }
+    }
+
+    pub fn sub_needed(&mut self, tid: usize, id: usize, need: usize) {
+        self.need[tid][id] -= need;
     }
 
     pub fn add_needed(&mut self, tid: usize, id: usize, need: usize) {
@@ -68,7 +81,7 @@ impl DeadlockDetect {
         self.available[id] -= allocated;
     }
 
-    pub fn relax(&mut self, tid: usize, id: usize, allocated: usize) {
+    pub fn release(&mut self, tid: usize, id: usize, allocated: usize) {
         self.allocation[tid][id] -= allocated;
         self.available[id] += allocated;
     }
