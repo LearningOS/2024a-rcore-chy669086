@@ -41,7 +41,7 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         Some(Arc::new(MutexBlocking::new()))
     };
     let mut process_inner = process.inner_exclusive_access();
-    if let Some(id) = process_inner
+    let id = if let Some(id) = process_inner
         .mutex_list
         .iter()
         .enumerate()
@@ -49,14 +49,13 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.mutex_list[id] = mutex;
-        process_inner.deadlock_detect_mutex.new_available(id, 1);
-        id as isize
+        id
     } else {
         process_inner.mutex_list.push(mutex);
-        let id = process_inner.mutex_list.len() - 1;
-        process_inner.deadlock_detect_mutex.new_available(id, 1);
-        id as isize
-    }
+        process_inner.mutex_list.len() - 1
+    };
+    process_inner.deadlock_detect_mutex.new_available(id, 1);
+    id as isize
 }
 /// mutex lock syscall
 pub fn sys_mutex_lock(mutex_id: usize) -> isize {
