@@ -35,13 +35,16 @@ pub struct DeadlockDetect {
 
 impl DeadlockDetect {
     pub fn new() -> Self {
+        // 因为主线程不通过 sys_thread_create 创建，所以手动在这里初始化
         Self {
             available: Vec::new(),
             allocation: vec![vec![]],
             need: vec![vec![]],
         }
     }
-    pub fn new_prossess(&mut self, tid: usize) {
+
+    /// 创建新线程的时候调用
+    pub fn new_thread(&mut self, tid: usize) {
         if tid < self.allocation.len() {
             assert!(self.allocation[tid].len() == self.need[tid].len());
             for i in 0..self.allocation[tid].len() {
@@ -54,6 +57,7 @@ impl DeadlockDetect {
         }
     }
 
+    /// 创建新资源的时候调用
     pub fn new_available(&mut self, id: usize, size: usize) {
         if id < self.available.len() {
             self.available[id] = size;
@@ -67,6 +71,7 @@ impl DeadlockDetect {
         }
     }
 
+    /// 当且仅当检测到死锁的时候调用
     pub fn sub_needed(&mut self, tid: usize, id: usize, need: usize) {
         self.need[tid][id] -= need;
     }
@@ -75,17 +80,20 @@ impl DeadlockDetect {
         self.need[tid][id] += need;
     }
 
+    /// 获得资源
     pub fn add_allocated(&mut self, tid: usize, id: usize, allocated: usize) {
         self.allocation[tid][id] += allocated;
         self.need[tid][id] -= allocated;
         self.available[id] -= allocated;
     }
 
+    /// 释放资源
     pub fn release(&mut self, tid: usize, id: usize, allocated: usize) {
         self.allocation[tid][id] -= allocated;
         self.available[id] += allocated;
     }
 
+    /// 检测是否存在死锁 银行家算法
     pub fn is_deadlock(&self) -> bool {
         let mut work = self.available.clone();
         let mut finish = vec![false; self.allocation.len()];
