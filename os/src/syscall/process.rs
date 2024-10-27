@@ -74,10 +74,10 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
         core::mem::size_of::<TimeVal>(),
     );
     for buffer in buffers {
-        for i in 0..buffer.len() {
-            buffer[i] = unsafe { *time };
-            time = unsafe { time.add(1) };
-        }
+        buffer.copy_from_slice(unsafe {
+            core::slice::from_raw_parts(time, buffer.len())
+        });
+        time = unsafe { time.add(buffer.len()) };
     }
     0
 }
@@ -106,10 +106,10 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
         core::mem::size_of::<TaskInfo>(),
     );
     for buffer in buffers {
-        for i in 0..buffer.len() {
-            buffer[i] = unsafe { *task_info };
-            task_info = unsafe { task_info.add(1) };
-        }
+        buffer.copy_from_slice(unsafe {
+            core::slice::from_raw_parts(task_info, buffer.len())
+        });
+        task_info = unsafe { task_info.add(buffer.len()) };
     }
     0
 }
@@ -122,16 +122,7 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     }
     let memset = current_task_memory_set();
 
-    let mut map_permmision = MapPermission::U;
-    if port & 0x1 != 0 {
-        map_permmision.insert(MapPermission::R);
-    }
-    if port & 0x2 != 0 {
-        map_permmision.insert(MapPermission::W);
-    }
-    if port & 0x4 != 0 {
-        map_permmision.insert(MapPermission::X);
-    }
+    let map_permmision = MapPermission::from_bits_truncate(((port as u8) << 1) | (1 << 4));
 
     memset.try_insert_framed_area(
         VirtAddr::from(start),
